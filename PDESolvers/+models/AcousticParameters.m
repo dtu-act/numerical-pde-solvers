@@ -1,0 +1,13 @@
+function [acousticParam] = AcousticParameters(f,c,rho,Z)
+%ACOUSTICPARAMETERS Initialize an AcousticParameter struct
+    if nargin == 3
+        Z = inf;
+    end
+    acousticParam = struct(...
+        'f', f,...
+        'c', c,...
+        'rho', rho,...
+        'omega',2*pi*f,... % angular velocity
+        'k',2*pi*f/c, ...  % wave number
+        'Z',Z); % impedance 
+end

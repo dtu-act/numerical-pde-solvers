@@ -1,0 +1,6 @@
+function [param] = SimulationParameters2D(P)
+    param = struct(...
+        'P', P,...
+        'Np', (P+1)*(P+2)/2,... % number of nodes in each element needed to support order P basis functions)
+        'Nfaces', 3);           % triangles -> 3 points
+end
