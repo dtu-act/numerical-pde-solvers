@@ -1,9 +1,10 @@
-function [vx,etov,conn,rs,x1d] = setupMesh1D(c,fmax,Porder,ppw,xminmax)
+function [vx,etov,conn,rs,x1d,dx] = setupMesh1D(c,fmax,Porder,ppw,xminmax)
     xl = xminmax(1);
     xu = xminmax(2);
     
     % create mesh (no higher order nodes)
     [vx, etov] = sem.setupUniformGrid1D(c,fmax,Porder,ppw,xl,xu);
+    dx = vx(2)-vx(1);
     
     % local nodes as Legendre-Gauss-Lobatto (LGL) (p. 63)
     rs = spectral.JacobiGL(0, 0, Porder);

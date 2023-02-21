@@ -5,7 +5,7 @@ function [conn,X2D,Y2D,VX,VY,etov,etoe,etof,x,y,r,s,Nk,gidx,dx] = setupMesh2D(c,
     dx = wavelength_min/ppw;
     h0 = dx*P - 1e-2; % Mesh element size (distmesh parameter)
 
-    [VX, VY, K, etov] = setup.MeshGenDistMesh2D(xminmax,yminmax,h0,do_plot);    
+    [VX, VY, K, etov] = setup.MeshGenDistMesh2D(xminmax,yminmax,h0,do_plot);  
     
     % mesh interconnectivity-table
     %etov = conelmtab(NeX,NeY);
@@ -19,8 +19,6 @@ function [conn,X2D,Y2D,VX,VY,etov,etoe,etof,x,y,r,s,Nk,gidx,dx] = setupMesh2D(c,
     v1 = etov(:,1)';
     v2 = etov(:,2)';
     v3 = etov(:,3)';
-    %VX = VX';
-    %VY = VY';
     x = 0.5*(-(r+s)*VX(v1)+(1+r)*VX(v2)+(1+s)*VX(v3));
     y = 0.5*(-(r+s)*VY(v1)+(1+r)*VY(v2)+(1+s)*VY(v3));
     

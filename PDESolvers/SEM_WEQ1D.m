@@ -12,11 +12,11 @@ if ~exist(base_path, 'dir')
 end
 
 write_data = true;
-plot_impedance_fitting = true;
+do_plots = true;
 
 %% SIMULATION PARAMETERS
 source_type = "gaussian"; % "gaussian" | "grf"
-boundary_type = "freq_indep"; % "neumann", "dirichlet", "freq_indep" | "freq_dep"
+boundary_type = "neumann"; % "neumann", "dirichlet", "freq_indep" | "freq_dep"
 
 tmax = 18;
 xminmax = [0,5];
@@ -29,7 +29,7 @@ src_padding = 0.6; % distance to the boundaries
 
 % resolutions
 ppw = 8; % points per wavelength for SEM simulation
-ppw_u = 8; % ppw for branch net u (should be set low for GRF)
+ppw_u = 2; % ppw for branch net u (should be set low for GRF)
 ppw_srcs = 5; % resolution for the source samples distributions
 
 % resolution for output data
@@ -47,46 +47,46 @@ num_of_nodes_u = ceil(L/(c_phys/(fmax_phys*ppw_u)));
 num_srcs = ceil(L/(c_phys/(fmax_phys*ppw_srcs)));
 
 if boundary_type == "freq_dep"
-    %sigma = 8000/c_phys; % Flow resistivity
-    %d = 0.1; % Thickness of porous material inside cavity
-    sigma = 8000/c_phys;
-    dmat = 0.1;
+    sigma = 8000/c_phys; % Flow resistivity
+    dmat = 0.1; % Thickness of porous material inside cavity
     filter_order = 4; % Order of approximation on rational function for BC's
-    CFL = 0.1;
+    CFL = 0.2;
 elseif boundary_type == "freq_indep"
-    %xi = 5.83; % specific acoustic impedance
-    xi = 17.98; % specific acoustic impedance
+    xi = 17.98; % 5.83; specific acoustic impedance
     CFL = 1.0;
 else
     CFL = 1.0;
 end
 
 %% SETUP SIMULATION
-[vx,etov,conn,rs,x1d] = setup.setupMesh1D(c,fmax,Porder,ppw,xminmax);
+[vx,etov,conn,rs,x1d,dx] = setup.setupMesh1D(c,fmax,Porder,ppw,xminmax);
 dxMin = min(x1d(2:end) - x1d(1:end-1)); % assume sorted
 dt = CFL*dxMin/c; % courant condition
 timesteps = ceil(tmax/dt);
 
 if source_type == "gaussian"
-    x0_srcs = linspace(xminmax(1)+src_padding,xminmax(2)-src_padding,num_srcs);
-    %x0_srcs = [-0.3,-0.15,0.0,0.15,0.3];
+    %x0_srcs = linspace(xminmax(1)+src_padding,xminmax(2)-src_padding,num_srcs);
+    x0_srcs = [1-0.3,1-0.15,1+0.0,1+0.15,1+0.3];
     x1d_u = linspace(x1d(1), x1d(end), num_of_nodes_u);
-    [p0_ics, x_ic] = generateGaussianICs(x1d_u, x0_srcs, c, sigma0);
+    [up_ics, ux0_ic] = generateGaussianICs(x1d_u, x0_srcs, c, sigma0);
+    [p_ics, x0_ic] = generateGaussianICs(x1d, x0_srcs, c, sigma0);
 elseif source_type == "grf"
     x0_srcs = [];
-    [p0_ics, x_ic] = generateGRFs(xminmax, fmax, c, [0.3], num_srcs, num_of_nodes_u);
+    [p_ics, x0_ic] = generateGRFs(xminmax, fmax, c, [0.3], num_srcs, num_of_nodes_u);
 else
     error('ic not supported')
 end
 
-num_accs = 4;
-accs_srcs = zeros(size(p0_ics,1),timesteps,num_accs*2); % left and right accs
+N_accs = 4; % HARDCODED - do not change
+accs_all = zeros(size(p_ics,1),timesteps,N_accs*2); % left and right accs
 
-figure(1)
-plotICs(x_ic, p0_ics)
+figure()
+plotICs(x0_ic, p_ics)
+figure()
+plotICs(ux0_ic, up_ics)
 
-p_hat_srcs = zeros(size(p0_ics,1), timesteps, length(x1d));
-v_hat_srcs = p_hat_srcs;
+p_all = zeros(size(p_ics,1), timesteps, length(x1d));
+v_all = p_all;
 
 dtAccs = @(accs,p) 0;
 if boundary_type == "neumann"
@@ -106,7 +106,7 @@ elseif boundary_type == "freq_dep"
     impedance_data.type = boundary_type;
 
     data = impedance_data;
-    if plot_impedance_fitting
+    if do_plots
         impedance_bcs.plotImpedanceFitting(fspan, c_phys, Y, fit)
     end
     
@@ -123,88 +123,150 @@ end
 
 %% RUN SIMULATION
 tic
-for i=1:size(p0_ics,1)
-    p0_fn = @(x) spline(x_ic, p0_ics(i,:), x);
-        
+for i=1:size(p_ics,1)
+    if source_type == "grf"
+        % GRFs are expensive to calculate (not so much in 1D), so we
+        % interpolate
+        p_i = spline(x0_ic, up_ics(i,:), x1d);
+    else
+        p_i = p_ics(i,:);
+    end
+
     [p_hat, v_hat, laccs, raccs] = solvers.solveCoupledWaveEquation1D(...
-        tmax, c, rho, p0_fn(x1d), @(t) 0, A, Sx, timesteps, bc_update_fn, dtAccs);
+        tmax, c, rho, p_i, @(t) 0, A, Sx, timesteps, bc_update_fn, dtAccs);
     
     % normalize pressure
     pmax = max(abs(p_hat), [], 'all');
     
-    p_hat_srcs(i,:,:) = p_hat/pmax;
-    v_hat_srcs(i,:,:) = v_hat/pmax;
+    p_all(i,:,:) = p_hat/pmax;
+    v_all(i,:,:) = v_hat/pmax;
     
-    accs_srcs(i,:,:,:,:) = [laccs,raccs];
+    accs_all(i,:,:,:,:) = [laccs,raccs];
 end
 
 fprintf('Simulation time total: %0.2f\n', toc)
 fprintf('Dof: %d\nn: %d\ndt_sim: %1.8f\n\n',size(A,1),timesteps,dt);
 
-tsteps = linspace(0,tmax,size(p_hat_srcs, 2));
+% to be consistant with 2D code (rk code differs in spatial/temporal order - todo change)
+p_all = permute(p_all,[1,3,2]); 
+v_all = permute(v_all,[1,3,2]);
 
-if write_data
+tsteps = linspace(0,tmax,size(p_all, 3));
+mesh = x1d;
+umesh = x1d_u;
+umesh_shape = size(x1d_u);
+
+if write_data    
     if boundary_type == "freq_indep"
         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_xi%0.2f_%s%i_T%i.h5',...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,xi,source_type,size(p0_ics,1), tmax);
+            base_path,boundary_type,fmax*c_phys,sigma0,c,xi,source_type,size(p_ics,1), tmax);
     elseif boundary_type == "freq_dep"
         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_d%0.2f_%s%i_T%i.h5', ...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,dmat,source_type,size(p0_ics,1), tmax); 
+            base_path,boundary_type,fmax*c_phys,sigma0,c,dmat,source_type,size(p_ics,1), tmax); 
     else
         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_%s%i_T%i.h5', ...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,source_type,size(p0_ics,1), tmax);
+            base_path,boundary_type,fmax*c_phys,sigma0,c,source_type,size(p_ics,1), tmax);
     end
+
+    [mesh,p_out,dx_out] = write.pruneSpatial(mesh,p_all,dx,ppw,ppw_x_out);
+    [tsteps,p_out,dt_out] = write.pruneTemporal(dt,fmax,tsteps,p_out,ppw_t_out);
     
-    if ppw_x_out > 1        
-        xprune = round(ppw/ppw_x_out);
-        x1d = x1d(1:xprune:end);
-        p_hat_srcs = p_hat_srcs(:,:,1:xprune:end);
-    end
+    % permute for .h5 format to be correct
+    p_out_perm = permute(p_out,[3,2,1]);
+    up_ics_perm = permute(up_ics,[3,2,1]);
+    accs_all_prem = permute(accs_all,[4,3,2,1]);
 
-    if ppw_t_out > 1
-        tprune = round((ppw/ppw_t_out)/CFL)*2;
-
-        tsteps = tsteps(1:tprune:end);
-        p_hat_srcs = p_hat_srcs(:,1:tprune:end,:);
-    end
-
-    % transpose for .h5 format to be correct
-    p_hat_srcs_ = permute(p_hat_srcs,[3,2,1]);
-    v_hat_srcs_ = permute(v_hat_srcs,[3,2,1]);
-    accs_srcs_ = permute(accs_srcs,[4,3,2,1]);
-
-    write.writeHDF5(x1d,tsteps,p_hat_srcs_,conn,x0_srcs,accs_srcs_,...
-        c,c_phys,rho,sigma0,fmax,ppw,boundary_type,dxMin,xminmax,path_file)
-    
-    if boundary_type == "freq_dep"
-        path_json = sprintf('%s/freq_dep_params_d%0.4f.json',base_path,dmat);
-        [filepath,name,ext] = fileparts(path_file);
-        write.writeImpedanceParams(impedance_data,accs_srcs_(1,:,:),c,boundary_type,name,path_json)
-    end
+    write.writeHDF5(mesh,umesh,umesh_shape,p_out_perm,up_ics_perm,tsteps,conn,x0_srcs,accs_all_prem,...
+        c,c_phys,rho,sigma0,fmax,boundary_type,dx_out,xminmax,path_file)
 end
 
-srcs_indx = 1;
-p_hat = squeeze(p_hat_srcs(srcs_indx,:,:));
+% if write_data
+%     if boundary_type == "freq_indep"
+%         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_xi%0.2f_%s%i_T%i.h5',...
+%             base_path,boundary_type,fmax*c_phys,sigma0,c,xi,source_type,size(p0_ics,1), tmax);
+%     elseif boundary_type == "freq_dep"
+%         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_d%0.2f_%s%i_T%i.h5', ...
+%             base_path,boundary_type,fmax*c_phys,sigma0,c,dmat,source_type,size(p0_ics,1), tmax); 
+%     else
+%         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_%s%i_T%i.h5', ...
+%             base_path,boundary_type,fmax*c_phys,sigma0,c,source_type,size(p0_ics,1), tmax);
+%     end
+%     
+%     if ppw_x_out > 1        
+%         xprune = round(ppw/ppw_x_out);
+%         x1d = x1d(1:xprune:end);
+%         p_hat_srcs = p_hat_srcs(:,:,1:xprune:end);
+%     end
+% 
+%     if ppw_t_out > 1
+%         tprune = round((ppw/ppw_t_out)/CFL)*2;
+% 
+%         tsteps = tsteps(1:tprune:end);
+%         p_hat_srcs = p_hat_srcs(:,1:tprune:end,:);
+%     end
+% 
+%     % transpose for .h5 format to be correct
+%     p_hat_srcs_ = permute(p_hat_srcs,[3,2,1]);
+%     v_hat_srcs_ = permute(v_hat_srcs,[3,2,1]);
+%     accs_srcs_ = permute(accs_srcs,[4,3,2,1]);
+% 
+%     write.writeHDF5(x1d,tsteps,p_hat_srcs_,conn,x0_srcs,accs_srcs_,...
+%         c,c_phys,rho,sigma0,fmax,ppw,boundary_type,dxMin,xminmax,path_file)
+%     
+%     if boundary_type == "freq_dep"
+%         path_json = sprintf('%s/freq_dep_params_d%0.4f.json',base_path,dmat);
+%         [filepath,name,ext] = fileparts(path_file);
+%         write.writeImpedanceParams(impedance_data,accs_srcs_(1,:,:),c,boundary_type,name,path_json)
+%     end
+% end
 
 %% PLOTTING
-figure(2)
-contourf(x1d, tsteps, p_hat )
-colorbar
-xlabel('x [m]')
-ylabel('time [sec]')   
+srcs_indx = 1;
+p_i = p_out;
+if length(size(p_out)) == 3
+    % more than 1 source position has been calculated - extract first for
+    % plotting
+    p_i = squeeze(p_out(srcs_indx,:,:));
+end
 
-figure(3)
-for i = 1:length(tsteps)
-    if mod(i-1,1) == 0
-        t = tsteps(i);
-        plot(x1d,p_hat(i,:))
-        legend('Numerical')
-        xlabel('x [m]')
+
+if do_plots
+    figure()
+    for i = 1:size(p_i,2)
+        plot(mesh, p_i(:,i));
+        %shading flat
+        %axis equal
+        xlabel('x')
         ylabel('p')
-        ylim([-1,1]);          
+        title(sprintf('Simulated, t = %1.5f s',dt_out*(i-1)))
+        ylim([-1,1]);  
         drawnow
     end
 end
+
+
+% srcs_indx = 1;
+% p_hat = squeeze(p_all(srcs_indx,:,:));
+% 
+% %% PLOTTING
+% figure(2)
+% contourf(x1d, tsteps, p_hat )
+% colorbar
+% xlabel('x [m]')
+% ylabel('time [sec]')   
+% 
+% figure(3)
+% for i = 1:length(tsteps)
+%     if mod(i-1,1) == 0
+%         t = tsteps(i);
+%         plot(x1d,p_hat(i,:))
+%         legend('Numerical')
+%         xlabel('x [m]')
+%         ylabel('p')
+%         ylim([-1,1]);          
+%         drawnow
+%     end
+% end
 
 function [p0_ics, x_ic] = generateGaussianICs(x1d, x0_srcs, c, sigma0)
     p0_ics = zeros(length(x0_srcs), length(x1d));

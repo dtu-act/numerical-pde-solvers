@@ -12,9 +12,9 @@ function [ps_all, vs_all, laccs_all, raccs_all] = rk4_coupled_weq(dxV, dxP, ps0,
     vs_all = zeros(timesteps, length(ps0));
     vs_all(1,:) = vs0;    
 
-    ps = zeros(size(ps0,1),1);
+    ps = zeros(length(ps0),1);
     ps(:) = ps0;
-    vs = zeros(size(ps0,1),1);
+    vs = zeros(length(ps0),1);
     vs(:) = vs0;
         
     num_accs = 4;
