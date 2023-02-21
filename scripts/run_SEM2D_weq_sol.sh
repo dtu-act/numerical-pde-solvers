@@ -1,20 +1,21 @@
 #!/bin/bash
 
-#SBATCH -t 05:00:00
-#SBATCH --mem=64gb
-#SBATCH --ntasks=1 
-#SBATCH --cpus-per-task=32
+#BSUB -W 01:00
+#BSUB -q hpc
+# -- Number of cores requested -- 
+#BSUB -n 32
+#BSUB -R "rusage[mem=16GB]"
+#BSUB -J matlab_2D
 
-#SBATCH -o /users/nborrelj/data/nborrelj/logs/matlab_weq_data%j.out
-#SBATCH -e /users/nborrelj/data/nborrelj/logs/matlab_weq_data%j.err
-#SBATCH --job-name=matlab_weq_data
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=nikolas_borrel-jensen@brown.edu
+### -- Notify me by email when execution begins --
+#BSUB -B
+### -- Notify me by email when execution ends   --
+#BSUB -N
+### -- Specify the output and error file. %J is the job-id --
+#BSUB -o "/work3/nibor/1TB/logs/matlab_%J.out"
+#BSUB -e "/work3/nibor/1TB/logs/matlab_%J.err"
 
 module load gcc/10.2
-module load cuda/11.1.1
-module load cudnn/8.2.0
-module load python/3.9.0
-module load matlab/R2021a
+module load matlab/R2022b
 
-matlab-threaded -nodisplay -r "main_weq_GRF_SEM2D ; exit"
+matlab-threaded -nodisplay -r "SEM_WEQ2D ; exit"

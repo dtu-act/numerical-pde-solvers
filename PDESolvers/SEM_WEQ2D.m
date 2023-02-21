@@ -11,12 +11,12 @@ do_write_data = true;
 plot_impedance_fitting = false;
 
 source_type = "gaussian"; % "gaussian" | "grf"
-boundary_type = "neumann"; % "neumann" | "dirichlet" | "freq_indep" | "freq_dep"
+boundary_type = "freq_dep"; % "neumann" | "dirichlet" | "freq_indep" | "freq_dep"
 
 xminmax = [0.0,2.0];
 yminmax = [0.0,2.0];
 
-fixed_source_pos = true;
+fixed_source_pos = false;
 
 if fixed_source_pos 
 %     x0_srcs = [[0.9,0.9];
@@ -25,14 +25,11 @@ if fixed_source_pos
 %                [1.8,1.8];
 %                [2.1,2.1]];
 
-%     x0_srcs = [[0.7, 0.7];
-%                [0.85,0.85];
-%                [1.0, 1.0];
-%                [1.15,1.15];
-%                [1.30,1.30]];
-
-x0_srcs = [[0.7, 0.7]];
-
+    x0_srcs = [[0.7, 0.7];
+               [0.85,0.85];
+               [1.0, 1.0];
+               [1.15,1.15];
+               [1.30,1.30]];
 end
 
 tmax = 17; % normalized
@@ -60,20 +57,12 @@ c = 1;
 fmax = fmax_phys/c_phys; % Hz
 sigma0 = c/(pi*fmax/2); % 0.22 corresponds to 1000 Hz;
 
-if ~exist(base_path, 'dir')
-    status = mkdir(base_path);
-
-    if status ~= 1
-        error("Error writing dir. Error code: %i",status)
-    end
-end
-
 NODETOL = 1e-8;
 Np = (Porder+1)*(Porder+2)/2; % number of nodes in each element needed to support order P basis functions
 
 if boundary_type == "freq_dep"
     sigma = 10000/c_phys; % Flow resistivity
-    d = 0.03; % Thickness of porous material inside cavity
+    dmat = 0.001; % Thickness of porous material inside cavity
     filter_order = 6; % Order of approximation on rational function for BC's
     CFL = 0.2;
 elseif boundary_type == "freq_indep"
@@ -101,7 +90,7 @@ elseif boundary_type == "freq_indep"
 elseif boundary_type == "freq_dep"
     [hsurf, bcmap, M1D] = setup.calculateBoundaries2D(conn, X2D, Y2D, xminmax, yminmax, Porder, NODETOL);
     f_range = (50:1:5000)/c_phys; % Range where boundary conditions are defined
-    [impedance_data, Y, fit, fspan] = impedance_bcs.fitImpedanceBoundaryData(rho, c, f_range, sigma, filter_order, d);
+    [impedance_data, Y, fit, fspan] = impedance_bcs.fitImpedanceBoundaryData(rho, c, f_range, sigma, filter_order, dmat);
     impedance_data.type = boundary_type;
 
     data = impedance_data;
@@ -119,40 +108,38 @@ else
 end
 
 dt = setup.calculateDt(r,s,x,y,CFL,c,Porder,NODETOL);
-timesteps = ceil(tmax/dt);
-dt = tmax/timesteps;
+num_timesteps = ceil(tmax/dt);
+dt = tmax/num_timesteps;
 
 [X2D_u,Y2D_u] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw_u);
 
 if source_type == "gaussian"
-    fixed_source_pos = true;
-
     if ~fixed_source_pos
         wavelength_min = c/fmax;
         dx_srcs = wavelength_min/ppw_srcs;
 
-        [VXsrcs, VYsrcs] = setup.MeshGenDistMesh2D(xminmax+src_pad,yminmax-src_pad,dx_srcs,do_plots);
+        [VXsrcs, VYsrcs] = setup.MeshGenDistMesh2D(xminmax+[src_pad,-src_pad],yminmax+[src_pad,-src_pad],dx_srcs,do_plots);
         x0_srcs = [VXsrcs' VYsrcs'];
     end
         
-    up0_ics = generateGaussianICs2D(X2D_u,Y2D_u,x0_srcs,sigma0); % samples for branch net saved to disk only
-    p0_ics = generateGaussianICs2D(X2D,Y2D,x0_srcs,sigma0); % initial condition for simulation
+    up_ics = generateGaussianICs2D(X2D_u,Y2D_u,x0_srcs,sigma0); % samples for branch net saved to disk only
+    p_ics = generateGaussianICs2D(X2D,Y2D,x0_srcs,sigma0); % initial condition for simulation
     
     if do_plots
         figure()
-        plotICs2D(X2D,Y2D,p0_ics(1,:))
+        plotICs2D(X2D,Y2D,p_ics(1,:))
         figure()
-        plotICs2D(X2D_u,Y2D_u,up0_ics(1,:))
+        plotICs2D(X2D_u,Y2D_u,up_ics(1,:))
     end    
 elseif source_type == "grf"
     num_grf_samples = 2;              
     x0_srcs = [];
     % calculating GRFs is expensive, use scarse number of points
-    p0_ics = ics.generateGRFsUnStructured2D([1.0], [0.3], X2D_u, Y2D_u, dx, num_grf_samples, sigma0);
+    p_ics = ics.generateGRFsUnStructured2D([1.0], [0.3], X2D_u, Y2D_u, dx, num_grf_samples, sigma0);
 
     if do_plots
         figure()
-        plotICs2D(x2d_u,y2d_u,p0_ics(1,:))
+        plotICs2D(x2d_u,y2d_u,p_ics(1,:))
     end
 else
     error('ic not supported')
@@ -162,29 +149,29 @@ end
 %laccs_srcs = zeros(size(p_ics,1),timesteps,N_accs);
 %raccs_srcs = zeros(size(p_ics,1),timesteps,N_accs);    
 
-p_all = zeros(size(p0_ics,1), length(X2D), timesteps+1);
+p_all = zeros(size(p_ics,1), length(X2D), num_timesteps+1);
 vx_all = p_all; vy_all = p_all;
 
 %% RUN SIMULATION
 tic
 %parfor i=1:size(srcs,1)
-for i=1:size(p0_ics,1)
-    fprintf('Calculating solution %i/%i\n', i, size(p0_ics,1))
+for i=1:size(p_ics,1)
+    fprintf('Calculating solution %i/%i\n', i, size(p_ics,1))
     z0 = zeros(3*N,1);
     
     if source_type == "grf"
         % beacuse GRFs are computational expensive, we interpolate from
         % sparse data
-        p_ic = griddata(X2D_u,Y2D_u,p0_ics(i,:),X2D,Y2D,'cubic');
+        p_ic = griddata(X2D_u,Y2D_u,p_ics(i,:),X2D,Y2D,'cubic');
         assert(~any(isnan(p_ic)))  
     else
-        p_ic = p0_ics(i,:);
+        p_ic = p_ics(i,:);
     end
 
     z0(2*N+1:3*N,1) = p_ic;
 
     [p_i,vx_i,vy_i] = solvers.solveCoupledWaveEquation2D(z0,tmax,rho,N,M2D,Sx,Sy, ...
-        timesteps,bc_update_fn,accs);
+        num_timesteps,bc_update_fn,accs);
         
     pmax = max(abs(p_i), [], 'all'); % normalize pressure    
     assert(pmax > 0)
@@ -194,9 +181,9 @@ for i=1:size(p0_ics,1)
     vy_all(i,:,:) = vy_i/pmax;
 end
 fprintf('Simulation time total: %0.2f\n', toc)
-fprintf('Dof: %d\nn: %d\ndt_sim: %1.8f\n\n',size(M2D,1),timesteps,dt);
+fprintf('Dof: %d\nn: %d\ndt_sim: %1.8f\n\n',size(M2D,1),num_timesteps,dt);
 
-tsteps = linspace(0,tmax,size(p_all, 3));
+tsteps_out = linspace(0,tmax,size(p_all, 3));
 mesh = [X2D(:) Y2D(:)];
 umesh = [X2D_u(:) Y2D_u(:)];
 umesh_shape = size(X2D_u);
@@ -204,23 +191,23 @@ umesh_shape = size(X2D_u);
 if do_write_data    
     if boundary_type == "freq_indep"
         path_file = sprintf('%s/%s_2D_%0.2fHz_sigma%0.1f_c%i_xi%0.2f_%s%i.h5',...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,xi,source_type,size(p0_ics,1));
+            base_path,boundary_type,fmax*c_phys,sigma0,c,xi,source_type,size(p_ics,1));
     elseif boundary_type == "freq_dep"
         path_file = sprintf('%s/%s_2D_%0.2fHz_sigma%0.1f_c%i_d%0.2f_%s%i.h5', ...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,d,source_type,size(p0_ics,1)); 
+            base_path,boundary_type,fmax*c_phys,sigma0,c,dmat,source_type,size(p_ics,1)); 
     else
         path_file = sprintf('%s/%s_2D_%0.2fHz_sigma%0.1f_c%i_%s%i.h5', ...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,source_type,size(p0_ics,1));
+            base_path,boundary_type,fmax*c_phys,sigma0,c,source_type,size(p_ics,1));
     end
 
     [mesh,p_out,dx_out] = write.pruneSpatial(mesh,p_all,dx,ppw,ppw_x_out);
-    [tsteps,p_out,dt_out] = write.pruneTemporal(dt,fmax,tsteps,p_out,ppw_t_out);
+    [tsteps_out,p_out,dt_out] = write.pruneTemporal(dt,fmax,tsteps_out,p_out,ppw_t_out);
     
     % permute for .h5 format to be correct
-    p_out_perm = permute(p_out,[3,2,1]);
-    up_ics_perm = permute(up_ics,[3,2,1]);  
+    p_out_perm = permute(p_out,[2,3,1]);
+    up_ics_perm = permute(up_ics,[2,3,1]);  
 
-    write.writeHDF5(mesh,umesh,umesh_shape,p_out_perm,up0_ics_perm,tsteps,conn,x0_srcs,{},...
+    write.writeHDF5(mesh,umesh,umesh_shape,p_out_perm,up_ics_perm,tsteps_out,conn,x0_srcs,{},...
         c,c_phys,rho,sigma0,fmax,boundary_type,dx_out,[xminmax' yminmax'],path_file)
 end
 
@@ -368,14 +355,14 @@ end
 
 function [base_path] = setupEnv(is_HPC)
     if is_HPC
-        base_path = '/users/nborrelj/data/nborrelj/deeponet/input/matlab';
+        base_path = '/work3/nibor/1TB/deeponet/input_1D_2D';
         parpool('threads')
         addpath("../shared")
         addpath("../distmesh")
     else
         %delete(gcp('nocreate'))
         %parpool('threads')
-        base_path = '/Users/nikolasborrel/data/deeponet/input/matlab';    
+        base_path = '/Users/nikolasborrel/data/deeponet/input_1D_2D';    
     end
 end
 

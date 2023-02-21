@@ -148,8 +148,8 @@ fprintf('Simulation time total: %0.2f\n', toc)
 fprintf('Dof: %d\nn: %d\ndt_sim: %1.8f\n\n',size(A,1),timesteps,dt);
 
 % to be consistant with 2D code (rk code differs in spatial/temporal order - todo change)
-p_all = permute(p_all,[1,3,2]); 
-v_all = permute(v_all,[1,3,2]);
+p_all = permute(p_all,[3,1,2]); 
+v_all = permute(v_all,[3,1,2]);
 
 tsteps = linspace(0,tmax,size(p_all, 3));
 mesh = x1d;
@@ -172,8 +172,8 @@ if write_data
     [tsteps,p_out,dt_out] = write.pruneTemporal(dt,fmax,tsteps,p_out,ppw_t_out);
     
     % permute for .h5 format to be correct
-    p_out_perm = permute(p_out,[3,2,1]);
-    up_ics_perm = permute(up_ics,[3,2,1]);
+    p_out_perm = permute(p_out,[2,3,1]);
+    up_ics_perm = permute(up_ics,[2,3,1]);
     accs_all_prem = permute(accs_all,[4,3,2,1]);
 
     write.writeHDF5(mesh,umesh,umesh_shape,p_out_perm,up_ics_perm,tsteps,conn,x0_srcs,accs_all_prem,...
