@@ -1,14 +1,7 @@
-function [conn,X2D,Y2D,VX,VY,etov,etoe,etof,x,y,r,s,Nk,gidx,dx] = setupMesh2D(c,fmax,P,ppw,xminmax,yminmax,do_plot)
+function [conn,X2D,Y2D,VX,VY,etov,etoe,etof,x,y,r,s,Nk,gidx] = setupMesh2D(VX,VY,etov,P)
     % Generate local mesh for reference element
     
-    wavelength_min = c/fmax;
-    dx = wavelength_min/ppw;
-    h0 = dx*P - 1e-2; % Mesh element size (distmesh parameter)
-
-    [VX, VY, K, etov] = setup.MeshGenDistMesh2D(xminmax,yminmax,h0,do_plot);  
-    
     % mesh interconnectivity-table
-    %etov = conelmtab(NeX,NeY);
     [etoe,etof] = spectral.tiConnect2D(etov,3);
     Nk = size(etov,1);
     
@@ -48,6 +41,6 @@ function [conn,X2D,Y2D,VX,VY,etov,etoe,etof,x,y,r,s,Nk,gidx,dx] = setupMesh2D(c,
     %% GENERATE CONNECTIVITY TABLE
     % create connectivity list with global numbers for each local degree of
     % freedom
-    [conn,gidx,X2D,Y2D] = meshing.ConstructConnectivityTable2D(VX,VY,etov,P,x,y,etoe,etof);
+    [conn,gidx,X2D,Y2D] = meshing.constructConnectivityTable2D(VX,VY,etov,P,x,y,etoe,etof);
     %[conn, X2D, Y2D, gidx] = meshing.connectivityTable2D(P,x,y,VX,VY,etov,etoe,etof);
 end

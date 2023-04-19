@@ -2,7 +2,7 @@ clear all
 close all
 addpath('../shared')
 
-base_path = '/Users/nikolasborrel/data/deeponet/input_1D_2D/matlab';
+base_path = '/Users/nikolasborrel/data/deeponet/input_1D_2D/matlab/';
 if ~exist(base_path, 'dir')
     status = mkdir(base_path);
 
@@ -16,10 +16,12 @@ do_plots = true;
 
 %% SIMULATION PARAMETERS
 source_type = "gaussian"; % "gaussian" | "grf"
-boundary_type = "neumann"; % "neumann", "dirichlet", "freq_indep" | "freq_dep"
+boundary_type = "freq_indep"; % "neumann", "dirichlet", "freq_indep" | "freq_dep"
+src_fixed = true;
 
 tmax = 18;
-xminmax = [0,5];
+xminmax = [0,3];
+xminmax_u = [0,3]; % dimension of sample input - could differ from xminmax when used for transfer learning
 
 c_phys = 343.0; % m/s speed of sound
 fmax_phys = 1000;
@@ -43,7 +45,8 @@ fmax = fmax_phys/c_phys; % Hz
 sigma0 = c/(pi*fmax/2);
 
 L = xminmax(2)-xminmax(1);
-num_of_nodes_u = ceil(L/(c_phys/(fmax_phys*ppw_u)));
+L_u = xminmax_u(2)-xminmax_u(1);
+num_of_nodes_u = ceil(L_u/(c_phys/(fmax_phys*ppw_u)));
 num_srcs = ceil(L/(c_phys/(fmax_phys*ppw_srcs)));
 
 if boundary_type == "freq_dep"
@@ -65,9 +68,12 @@ dt = CFL*dxMin/c; % courant condition
 timesteps = ceil(tmax/dt);
 
 if source_type == "gaussian"
-    %x0_srcs = linspace(xminmax(1)+src_padding,xminmax(2)-src_padding,num_srcs);
-    x0_srcs = [1-0.3,1-0.15,1+0.0,1+0.15,1+0.3];
-    x1d_u = linspace(x1d(1), x1d(end), num_of_nodes_u);
+    if src_fixed
+        x0_srcs = linspace(src_padding,L-src_padding,5);
+    else
+        x0_srcs = linspace(xminmax(1)+src_padding,xminmax(2)-src_padding,num_srcs);
+    end    
+    x1d_u = linspace(xminmax_u(1), xminmax_u(2), num_of_nodes_u);
     [up_ics, ux0_ic] = generateGaussianICs(x1d_u, x0_srcs, c, sigma0);
     [p_ics, x0_ic] = generateGaussianICs(x1d, x0_srcs, c, sigma0);
 elseif source_type == "grf"
@@ -148,8 +154,8 @@ fprintf('Simulation time total: %0.2f\n', toc)
 fprintf('Dof: %d\nn: %d\ndt_sim: %1.8f\n\n',size(A,1),timesteps,dt);
 
 % to be consistant with 2D code (rk code differs in spatial/temporal order - todo change)
-p_all = permute(p_all,[3,1,2]); 
-v_all = permute(v_all,[3,1,2]);
+p_all = permute(p_all,[1,3,2]); 
+v_all = permute(v_all,[1,3,2]);
 
 tsteps = linspace(0,tmax,size(p_all, 3));
 mesh = x1d;
@@ -158,14 +164,14 @@ umesh_shape = size(x1d_u);
 
 if write_data    
     if boundary_type == "freq_indep"
-        path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_xi%0.2f_%s%i_T%i.h5',...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,xi,source_type,size(p_ics,1), tmax);
+        path_file = sprintf('%s/1D_%s_%0.2fHz_L%0.2f_sigma%0.1f_c%i_xi%0.2f_%s%i_T%i.h5',...
+            base_path,boundary_type,fmax*c_phys,L,sigma0,c,xi,source_type,size(p_ics,1), tmax);
     elseif boundary_type == "freq_dep"
-        path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_d%0.2f_%s%i_T%i.h5', ...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,dmat,source_type,size(p_ics,1), tmax); 
+        path_file = sprintf('%s/%s_1D_%0.2fHz_L%0.2f_sigma%0.1f_c%i_d%0.2f_%s%i_T%i.h5', ...
+            base_path,boundary_type,fmax*c_phys,L,sigma0,c,dmat,source_type,size(p_ics,1), tmax); 
     else
-        path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_%s%i_T%i.h5', ...
-            base_path,boundary_type,fmax*c_phys,sigma0,c,source_type,size(p_ics,1), tmax);
+        path_file = sprintf('%s/%s_1D_%0.2fHz_L%0.2f_sigma%0.1f_c%i_%s%i_T%i.h5', ...
+            base_path,boundary_type,fmax*c_phys,L,sigma0,c,source_type,size(p_ics,1), tmax);
     end
 
     [mesh,p_out,dx_out] = write.pruneSpatial(mesh,p_all,dx,ppw,ppw_x_out);
@@ -176,49 +182,9 @@ if write_data
     up_ics_perm = permute(up_ics,[2,3,1]);
     accs_all_prem = permute(accs_all,[4,3,2,1]);
 
-    write.writeHDF5(mesh,umesh,umesh_shape,p_out_perm,up_ics_perm,tsteps,conn,x0_srcs,accs_all_prem,...
+    write.writeAllHDF5(mesh,umesh,umesh_shape,p_out_perm,up_ics_perm,tsteps,conn,x0_srcs',accs_all_prem,...
         c,c_phys,rho,sigma0,fmax,boundary_type,dx_out,xminmax,path_file)
 end
-
-% if write_data
-%     if boundary_type == "freq_indep"
-%         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_xi%0.2f_%s%i_T%i.h5',...
-%             base_path,boundary_type,fmax*c_phys,sigma0,c,xi,source_type,size(p0_ics,1), tmax);
-%     elseif boundary_type == "freq_dep"
-%         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_d%0.2f_%s%i_T%i.h5', ...
-%             base_path,boundary_type,fmax*c_phys,sigma0,c,dmat,source_type,size(p0_ics,1), tmax); 
-%     else
-%         path_file = sprintf('%s/%s_1D_%0.2fHz_sigma%0.1f_c%i_%s%i_T%i.h5', ...
-%             base_path,boundary_type,fmax*c_phys,sigma0,c,source_type,size(p0_ics,1), tmax);
-%     end
-%     
-%     if ppw_x_out > 1        
-%         xprune = round(ppw/ppw_x_out);
-%         x1d = x1d(1:xprune:end);
-%         p_hat_srcs = p_hat_srcs(:,:,1:xprune:end);
-%     end
-% 
-%     if ppw_t_out > 1
-%         tprune = round((ppw/ppw_t_out)/CFL)*2;
-% 
-%         tsteps = tsteps(1:tprune:end);
-%         p_hat_srcs = p_hat_srcs(:,1:tprune:end,:);
-%     end
-% 
-%     % transpose for .h5 format to be correct
-%     p_hat_srcs_ = permute(p_hat_srcs,[3,2,1]);
-%     v_hat_srcs_ = permute(v_hat_srcs,[3,2,1]);
-%     accs_srcs_ = permute(accs_srcs,[4,3,2,1]);
-% 
-%     write.writeHDF5(x1d,tsteps,p_hat_srcs_,conn,x0_srcs,accs_srcs_,...
-%         c,c_phys,rho,sigma0,fmax,ppw,boundary_type,dxMin,xminmax,path_file)
-%     
-%     if boundary_type == "freq_dep"
-%         path_json = sprintf('%s/freq_dep_params_d%0.4f.json',base_path,dmat);
-%         [filepath,name,ext] = fileparts(path_file);
-%         write.writeImpedanceParams(impedance_data,accs_srcs_(1,:,:),c,boundary_type,name,path_json)
-%     end
-% end
 
 %% PLOTTING
 srcs_indx = 1;

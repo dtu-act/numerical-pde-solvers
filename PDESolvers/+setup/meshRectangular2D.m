@@ -1,4 +1,4 @@
-function [VX, VY, K, EToV] = MeshGenDistMesh2D(xminmax,yminmax,h0,do_plot)
+function [VX, VY, K, EToV] = meshRectangular2D(xminmax,yminmax,h0,do_plot)
     % function [VX, VY, K, EToV] = MeshGenDistMesh2D()
     % Purpose : Generate 2D square mesh using DistMesh;
     % By Allan P. Engsig-Karup

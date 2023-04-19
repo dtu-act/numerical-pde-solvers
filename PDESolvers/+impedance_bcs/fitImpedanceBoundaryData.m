@@ -24,7 +24,6 @@ function [impedance_data, Y, fit, f_range] = fitImpedanceBoundaryData(rho, c, f_
     Niter=3;
     for iter=1:Niter
       if iter==Niter, opts.skip_res=0; end
-      disp(['   Iter ' num2str(iter)])
       [SER,poles,rmserr,fit]=vectfit3(Y,s,poles,weight,opts);
       rms(iter,1)=rmserr;
     end
