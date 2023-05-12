@@ -2,15 +2,15 @@ clear all
 close all
 
 hpc_env = true;
+run_parallel = false;
 
 %% USER PARAMETERS
 
-sim_id = 'cube_freq_indep_ppw4_noprune';
+sim_id = 'rect_freq_indep_ppw45_dt6_val_orig';
 do_plot = true & ~hpc_env;
-do_write_data = true;
 plot_impedance_fitting = false;
 
-rand_src_pos = true;
+rand_src_pos = false;
 
 source_type = "gaussian"; % "gaussian" | "grf"
 boundary_type = "freq_indep"; % "neumann" | "dirichlet" | "freq_indep" | "freq_dep"
@@ -25,20 +25,31 @@ c_phys = 343.0; % m/s speed of sound
 rho = 1.2;
 
 % resolutions
-ppw = 4; % points per wavelength for SEM simulation
 ppw_u = 4; % ppw for branch net u (should be set low for GRF)
-ppw_srcs = 5; % resolution for the source samples distributions
+ppw = 5; % points per wavelength for SEM simulation
+ppw_srcs = -1; % resolution for the source samples distributions
+dt_overwrite = 0.018338726833462715; %0.17155029778730324;
 
 % resolution for output data
 ppw_x_out = -1;
 ppw_t_out = -1;
-
 Porder = 4;
 
 %%%%%%%%%%%%%%%
-base_path = setupEnv(hpc_env);
+base_path = setupEnv(hpc_env, run_parallel);
 
-filepath_out = sprintf('%s/%s.h5', base_path, sim_id);
+if run_parallel
+    base_path = sprintf('%s/%s', base_path, sim_id);
+    if isfolder(base_path)    
+        delete(base_path+'/*')
+    else
+        [status, msg, msgID] = mkdir(base_path);
+        if status ~= 1
+            error(msg)
+        end
+    end
+end
+
 xl = xminmax(1); xu = xminmax(2);
 yl = yminmax(1); yu = yminmax(2);
 src_pad = 0.7; % distance to the boundaries
@@ -94,7 +105,7 @@ if boundary_type == "freq_dep"
     filter_order = N_accs; % Order of approximation on rational function for BC's
     CFL = 0.1;
 elseif boundary_type == "freq_indep"
-    xi = 5.83; % specific acoustic impedance (used for freq. independent boundaries only)
+    xi = 17.98; % 5.83; specific acoustic impedance (used for freq. independent boundaries only)
     CFL = 1.0;    
 else
     CFL = 1.0;
@@ -136,9 +147,20 @@ else
     error('boundary type not supported')
 end
 
-dt = setup.calculateDt(r,s,x,y,CFL,c,Porder,NODETOL);
-num_timesteps = ceil(tmax/dt);
-dt = tmax/num_timesteps;
+if dt_overwrite > 0
+    dt = setup.calculateDt(r,s,x,y,CFL,c,Porder,NODETOL);
+    if dt_overwrite > dt
+        error('dt_overwrite is coarse than minimum resolution')
+    end
+    dt = dt_overwrite;
+    
+    num_timesteps = ceil(tmax/dt_overwrite);
+    tmax = num_timesteps*dt;
+else
+    dt = setup.calculateDt(r,s,x,y,CFL,c,Porder,NODETOL);
+    num_timesteps = ceil(tmax/dt);
+    dt = tmax/num_timesteps;
+end
 
 if source_type == "gaussian"
     if rand_src_pos
@@ -150,7 +172,7 @@ if source_type == "gaussian"
         fprintf('Calculating number of src positions: %i\n', size(x0_srcs,1))
     end
     
-    [X2D_u,Y2D_u] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw_u);
+    [X2D_u,Y2D_u,dx_u] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw_u);
 
     up_ics = generateGaussianICs2D(X2D_u,Y2D_u,x0_srcs,sigma0); % samples for branch net saved to disk (only)
     p_ics = generateGaussianICs2D(X2D,Y2D,x0_srcs,sigma0);      % initial condition for simulation
@@ -168,7 +190,7 @@ elseif source_type == "grf"
     x0_srcs = [];
     % calculating GRFs is expensive, use scarse number of points
     % TODO: non-rectangular domain
-    [X2D_u,Y2D_u] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw_u);
+    [X2D_u,Y2D_u,dx_u] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw_u);
     p_ics = ics.generateGRFsUnStructured2D([1.0], [0.3], X2D_u, Y2D_u, dx, num_grf_samples, sigma0);
 
     if do_plot
@@ -188,16 +210,23 @@ mesh = [X2D(:) Y2D(:)];
 umesh = [X2D_u(:) Y2D_u(:)];
 umesh_shape = size(X2D_u);
 
-p_all = zeros(size(p_ics,1), length(X2D), num_timesteps+1);
+if run_parallel
+    filepath_out = sprintf('%s/%s_header.h5', base_path, sim_id);
+    write.parallel.writeHeaderHDF5(filepath_out,mesh,umesh,umesh_shape,tsteps,conn,...
+        c,c_phys,rho,sigma0,fmax,boundary_type,dx,dx_u,[xminmax' yminmax'])
+else
+    filepath_out = sprintf('%s/%s.h5', base_path, sim_id);
+    p_all = zeros(size(p_ics,1), length(X2D), num_timesteps+1);
+    write.single.initHDF5(filepath_out,mesh,umesh,umesh_shape,p_all,up_ics,tsteps,conn,x0_srcs,...
+        c,c_phys,rho,sigma0,fmax,boundary_type,dx,dx_u,[xminmax' yminmax'])
+end
 
-write.initHDF5(filepath_out,mesh,umesh,umesh_shape,p_all,up_ics,tsteps,conn,x0_srcs,...
-    c,c_phys,rho,sigma0,fmax,boundary_type,dx,[xminmax' yminmax'])
 
 %% RUN SIMULATION
 tic
 %parfor i=1:size(p_ics,1)
 for i=1:size(p_ics,1)
-    fprintf('Calculating solution %i/%i\n', i, size(p_ics,1))
+    fprintf('Calculating solution %i/%i\n', i, size(p_ics,1))    
     z0 = zeros(3*N,1);
     
     if source_type == "grf"
@@ -217,14 +246,21 @@ for i=1:size(p_ics,1)
     pmax = max(abs(p_i), [], 'all'); % normalize pressure    
     assert(pmax > 0)
     
-    write.appendHDF5(filepath_out,p_i/pmax,i);
-    
-    %p_all(i,:,:) = p_i/pmax;
+    if run_parallel
+        x0 = x0_srcs(i,:);
+        up_ic = up_ics(i,:)
+        filepath_out = sprintf('%s/%s_%i.h5', base_path, sim_id, i);
+        fprintf('filepath_out : %s\n', filepath_out )
+        write.parallel.writeHDF5(filepath_out,p_i/pmax,up_ic,x0);
+    else
+        write.single.appendHDF5(filepath_out,p_i/pmax,i);        
+    end
 end
 fprintf('Simulation time total: %0.2f\n', toc)
 fprintf('Dof: %d\nn: %d\ndt_sim: %1.8f\n\n',size(M2D,1),num_timesteps,dt);
 
 if do_plot
+    dt = tsteps(2)-tsteps(1);
     figure()
     % use this if pruned in spatial dimension
     %tri = delaunay(X2D(:),Y2D(:)); 
@@ -237,7 +273,7 @@ if do_plot
         xlabel('x')
         ylabel('y')
         zlabel('p')
-        title(sprintf('Simulated, t = %1.5f s',dt_out*(i-1)))
+        title(sprintf('Simulated, t = %1.5f s',dt*(i-1)))
         zlim([-1.0 1.0])
         colorbar()
         caxis([-0.3 0.3])    
@@ -358,20 +394,23 @@ function [rhs_fn] = setupFrequencyDependentBCs(rho,c,bcmap,hsurf,N,P,Sx,Sy,M1D,d
     rhs_fn = @frequencyDependentBCs;
 end
 
-function [base_path] = setupEnv(is_HPC)    
+function [base_path] = setupEnv(is_HPC,run_parallel)    
     if is_HPC
         disp("HPC")
         base_path = '/work3/nibor/1TB/deeponet/input_1D_2D';
         addpath("/zhome/00/4/50173/matlab/distmesh-master")
         addpath("/zhome/00/4/50173/matlab/matrix_fitting")
         addpath("../shared")
-        %parpool('Threads')
-        parpool('Processes')
+        if run_parallel
+            %parpool('Threads')
+            parpool('Processes');
+        end
     else
         disp("LOCAL")
         %delete(gcp('nocreate'))
-        %parpool('threads')
-        base_path = '/Users/nikolasborrel/data/deeponet/input_1D_2D/matlab/';
+        %parpool('Threads')
+        %parpool('Processes');
+        base_path = '/Users/nikolasborrel/data/deeponet/input_1D_2D/matlab';
         addpath('../shared')
     end
 
@@ -385,7 +424,7 @@ function [base_path] = setupEnv(is_HPC)
 
 end
 
-function [XX,YY] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw)
+function [XX,YY,dx] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw)
     dx = c/(fmax*ppw);
 
     num_of_nodes_x = ceil((xminmax(2)-xminmax(1))/dx);

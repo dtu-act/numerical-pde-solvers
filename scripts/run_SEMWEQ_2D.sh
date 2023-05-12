@@ -1,12 +1,12 @@
 #!/bin/bash
 
-#BSUB -W 24:00
+#BSUB -W 72:00
 #BSUB -q hpc
 # -- Number of cores requested -- 
-#BSUB -n 8
+#BSUB -n 1
 #BSUB -R "span[hosts=1]"
-#BSUB -R "rusage[mem=16GB]"
-#BSUB -J matlab2D_ppw4
+#BSUB -R "rusage[mem=64GB]"
+#BSUB -J matlab2D
 
 ### -- Notify me by email when execution begins --
 #BSUB -B
