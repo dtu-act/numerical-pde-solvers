@@ -2,38 +2,76 @@ clear all
 close all
 
 hpc_env = true;
-run_parallel = false;
+run_parallel = true;
 
 %% USER PARAMETERS
 
-sim_id = 'rect_freq_indep_ppw45_dt6_val_orig';
+%sim_id = 'Lshape3x3_freq_indep_ppw265_train_orig';
+%sim_id = 'Lshape3x3_freq_indep_ppw248_40srcpos_val_orig';
+
+sim_id = 'Lshape3x3_freq_indep_ppw_2_4_2_5srcpos_val_orig';
+
 do_plot = true & ~hpc_env;
 plot_impedance_fitting = false;
 
-rand_src_pos = false;
-
 source_type = "gaussian"; % "gaussian" | "grf"
 boundary_type = "freq_indep"; % "neumann" | "dirichlet" | "freq_indep" | "freq_dep"
-geometry = "CUBE"; % "LSHAPE" | "CUBE"
-geometry_src = "CUBE"; % "LSHAPE" | "CUBE"
+geometry = "LSHAPE"; % "LSHAPE" | "RECT" | FURNISHED3x3
+
+% trunk net input dimension (non-uniform grid)
 xminmax = [0.0,3.0];
 yminmax = [0.0,3.0];
 
-tmax = 17; % normalized
-fmax_phys = 1000;
-c_phys = 343.0; % m/s speed of sound
-rho = 1.2;
+% branch net input dimension (uniform grid).
+% might differ from trunk net input when data should be used
+% for transfer learning having same dimensionality as the source model
+xminmax_u = [0.0,3.0];
+yminmax_u = [0.0,3.0];
 
 % resolutions
-ppw_u = 4; % ppw for branch net u (should be set low for GRF)
-ppw = 5; % points per wavelength for SEM simulation
-ppw_srcs = -1; % resolution for the source samples distributions
-dt_overwrite = 0.018338726833462715; %0.17155029778730324;
+ppw_u = 2; % ppw for branch net u (should be set low for GRF)
+ppw = 4; % points per wavelength for SEM simulation
+ppw_srcs = 10; % resolution for the source samples distributions
+
+fixed_src_pos = true; % use fixed source position (typically 5 positions)
+max_num_srcs = -1; % randomly sample max_num_srcs out of the total number of src positions
+
+% 3x3 rectangle
+% dt used for generating the training dataset 
+% with spatial resolution of ppw=6
+% dt_fixed = 0.018338726833462715;
+
+% 2x2 rectangle
+% dt used for generating the training dataset 
+% with spatial resolution of ppw=6 
+%dt_fixed = 0.017763845350052;
+
+% 3x3 furnished rectangle
+% dt used for generating the training dataset 
+% with spatial resolution of ppw=6 
+dt_fixed = 0.016159695817490;
+
+% 3x3 L-shape
+% dt used for generating the training dataset 
+% with spatial resolution of ppw=6
+% dt_fixed = 0.018867924528302;
+
+% 2.5x2.5 L-shape 
+% dt used for generating the training dataset 
+% with spatial resolution of ppw=6
+% dt_fixed = 0.018952062430323;
+
+%dt_fixed = -1; % -1 -> hardcoded dt not used, calculated instead
 
 % resolution for output data
 ppw_x_out = -1;
 ppw_t_out = -1;
 Porder = 4;
+
+tmax = 17; % normalized
+fmax_phys = 1000;
+c_phys = 343.0; % m/s speed of sound
+rho = 1.2;
 
 %%%%%%%%%%%%%%%
 base_path = setupEnv(hpc_env, run_parallel);
@@ -41,7 +79,7 @@ base_path = setupEnv(hpc_env, run_parallel);
 if run_parallel
     base_path = sprintf('%s/%s', base_path, sim_id);
     if isfolder(base_path)    
-        delete(base_path+'/*')
+        delete(base_path + "/*")
     else
         [status, msg, msgID] = mkdir(base_path);
         if status ~= 1
@@ -52,42 +90,65 @@ end
 
 xl = xminmax(1); xu = xminmax(2);
 yl = yminmax(1); yu = yminmax(2);
-src_pad = 0.7; % distance to the boundaries
+src_pad = 0.6; % distance to the boundaries
 
 if geometry == "LSHAPE"
     xslice = xminmax(2)/2;
     yslice = yminmax(2)/2;
     pv = [xl,yl; xl,yu; xl+xslice,yu; xl+xslice,yl+yslice; xu,yl+yslice; xu,yl; xl,yl];
-elseif geometry == "CUBE"
-    pv = [xl,yl;xu,yl;xl,yu;xu,yu];
-else 
-    error("geometry unknown")
-end
-
-if rand_src_pos    
-    if geometry_src == "LSHAPE"    
-        %% inner srcs
-        xslice = xminmax(2)/2-src_pad;
-        yslice = yminmax(2)/2-src_pad;
     
+    if fixed_src_pos
+        x0_srcs = [[0.9,0.75];[1.2,0.75];[1.5,0.75];[1.8,0.75];[2.1,0.75]]; % 3x3
+    else
+        % add padding corresponding to source width
+        xslice = xminmax(2)/2-src_pad;
+        yslice = yminmax(2)/2-src_pad;    
         pv_srcs = [xl+src_pad,yl+src_pad; xl+src_pad,yu-src_pad; 
                    xl+xslice,yu-src_pad; xl+xslice,yl+yslice; 
-                   xu-src_pad,yl+yslice; xu-src_pad,yl+src_pad; xl+src_pad,yl+src_pad];   
-    elseif geometry_src == "CUBE"
+                   xu-src_pad,yl+yslice; xu-src_pad,yl+src_pad; xl+src_pad,yl+src_pad];
+    end
+elseif geometry == "RECT"
+    pv = [xl,yl;xu,yl;xl,yu;xu,yu];
+    if fixed_src_pos
+        %x0_srcs = [[0.7, 0.7];[0.85,0.85];[1.0, 1.0];[1.15,1.15];[1.30,1.30]]; % 2x2
+        x0_srcs = [[0.9,0.9];[1.2,1.2];[1.5,1.5];[1.8,1.8];[2.1,2.1]]; % 3x3
+    else
+        % add padding corresponding to source width
         pv_srcs = [xl+src_pad,yl+src_pad;xu-src_pad,yl+src_pad;xl+src_pad,yu-src_pad;xu-src_pad,yu-src_pad];
-    else 
-        error("geometry src unknown")
+    end
+elseif geometry == "FURNISHED3x3"
+    pv = [xl,yl;
+          xl+1,yl;
+          xl+1,yl+0.6;
+          xl+2,yl+0.6;
+          xl+2,yl;
+          xu,yl;
+          xu,yu;
+          xu-0.5,yu;
+          xu-0.5,yu-0.3;
+          xu-0.8,yu-0.3;
+          xu-0.8,yu;
+          xu-1.25,yu;
+          xu-1.25,yu-0.3;
+          xu-1.75,yu-0.3;
+          xu-1.75,yu-0.001; % adjustment: a small values is subtracted to ensure distmesh to create a straight edge
+          xu-2.2,yu;
+          xu-2.2,yu-0.3;
+          xu-2.5,yu-0.3;
+          xu-2.5,yu;
+          xl,yu;
+          xl,yl];
+    
+    if fixed_src_pos
+        x0_srcs = [[1.5, 0.6];[1.5, 0.6];[1.5, 2.4];[1.5, 0.6];[1.5, 0.6]]; % 3x3 (same as 3D)
+    else
+        % create rectangle inside for src positions
+        src_pad_l = src_pad + 0.6;
+        src_pad_u = src_pad + 0.3;
+        pv_srcs = [xl+src_pad,yl+src_pad_l;xu-src_pad_u,yl+src_pad_l;xl+src_pad,yu-src_pad_u;xu-src_pad,yu-src_pad_u];
     end
 else
-    if geometry_src == "LSHAPE"    
-        x0_srcs = [[0.9,0.75];[1.2,0.75];[1.5,0.75];[1.8,0.75];[2.1,0.75]]; % L-shape
-    elseif geometry_src == "CUBE"
-        %x0_srcs = [[0.7, 0.7];[0.85,0.85];[1.0, 1.0];[1.15,1.15];[1.30,1.30]]; % cube 2x2
-        x0_srcs = [[0.9,0.9];[1.2,1.2];[1.5,1.5];[1.8,1.8];[2.1,2.1]]; % cube 3x3
-        %x0_srcs = [[0.9,0.9];[1.2,1.2];]; % cube 3x3
-    else 
-        error("geometry unknown")
-    end
+    error("geometry unknown")
 end
 
 N_accs = 4; % HARDCODED - do not change, only 4 accumulators are computed
@@ -147,14 +208,14 @@ else
     error('boundary type not supported')
 end
 
-if dt_overwrite > 0
+if dt_fixed > 0
     dt = setup.calculateDt(r,s,x,y,CFL,c,Porder,NODETOL);
-    if dt_overwrite > dt
-        error('dt_overwrite is coarse than minimum resolution')
+    if dt_fixed > dt
+        error('dt_fixed is coarser than minimum resolution')
     end
-    dt = dt_overwrite;
+    dt = dt_fixed;
     
-    num_timesteps = ceil(tmax/dt_overwrite);
+    num_timesteps = ceil(tmax/dt_fixed);
     tmax = num_timesteps*dt;
 else
     dt = setup.calculateDt(r,s,x,y,CFL,c,Porder,NODETOL);
@@ -163,44 +224,40 @@ else
 end
 
 if source_type == "gaussian"
-    if rand_src_pos
-        wavelength_min = c/fmax;
-        dx_srcs = wavelength_min/ppw_srcs;       
-
-        [VXsrcs, VYsrcs] = setup.meshPolygon2D(c,fmax,1,ppw,pv_srcs,do_plot);
+    if ~fixed_src_pos
+        [VXsrcs, VYsrcs, ~, dx_src] = setup.meshPolygon2D(c,fmax,1,ppw_srcs,pv_srcs,do_plot);
         x0_srcs = [VXsrcs' VYsrcs'];
-        fprintf('Calculating number of src positions: %i\n', size(x0_srcs,1))
+        if max_num_srcs > 0
+            rng(0,'twister');
+            r = randi([1 size(x0_srcs,1)],1,max_num_srcs);
+            x0_srcs = x0_srcs(r,:);
+        end
     end
+    fprintf('Calculating number of src positions: %i\n', size(x0_srcs,1))
     
-    [X2D_u,Y2D_u,dx_u] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw_u);
+    [X2D_u,Y2D_u,dx_u] = generateRectilinearGrid(xminmax_u,yminmax_u,c,fmax,ppw_u);
 
     up_ics = generateGaussianICs2D(X2D_u,Y2D_u,x0_srcs,sigma0); % samples for branch net saved to disk (only)
     p_ics = generateGaussianICs2D(X2D,Y2D,x0_srcs,sigma0);      % initial condition for simulation
     
     if do_plot
-        figure()
-        plotICs2D(X2D_u,Y2D_u,up_ics(1,:))
-        for i=1:5 % show first 5
-            figure()
-            plotICs2D(X2D,Y2D,p_ics(i,:),etov)
-        end
+        plotICs2D(X2D_u,Y2D_u,up_ics(1:5,:))
+        plotICs2D(X2D,Y2D,p_ics(1:5,:),etov)        
     end    
 elseif source_type == "grf"
-    num_grf_samples = 2;              
+    num_grf_samples = 2;
+    dx_src = -1; % TODO
     x0_srcs = [];
     % calculating GRFs is expensive, use scarse number of points
-    % TODO: non-rectangular domain
+    % NOTE: only rectangular domains are currently supported
     [X2D_u,Y2D_u,dx_u] = generateRectilinearGrid(xminmax,yminmax,c,fmax,ppw_u);
     p_ics = ics.generateGRFsUnStructured2D([1.0], [0.3], X2D_u, Y2D_u, dx, num_grf_samples, sigma0);
 
     if do_plot
-        for i=1:5 % show first 5
-            figure()
-            plotICs2D(x2d_u,y2d_u,p_ics(i,:))
-        end
+        plotICs2D(x2d_u,y2d_u,p_ics(1:5,:))
     end
 else
-    error('ic not supported')
+    error('source_type not supported')
 end
 
 tsteps = linspace(0,tmax,num_timesteps+1);
@@ -213,19 +270,19 @@ umesh_shape = size(X2D_u);
 if run_parallel
     filepath_out = sprintf('%s/%s_header.h5', base_path, sim_id);
     write.parallel.writeHeaderHDF5(filepath_out,mesh,umesh,umesh_shape,tsteps,conn,...
-        c,c_phys,rho,sigma0,fmax,boundary_type,dx,dx_u,[xminmax' yminmax'])
+        c,c_phys,rho,sigma0,fmax,boundary_type,dx,dx_u,dx_src,[xminmax' yminmax'])
 else
     filepath_out = sprintf('%s/%s.h5', base_path, sim_id);
     p_all = zeros(size(p_ics,1), length(X2D), num_timesteps+1);
     write.single.initHDF5(filepath_out,mesh,umesh,umesh_shape,p_all,up_ics,tsteps,conn,x0_srcs,...
-        c,c_phys,rho,sigma0,fmax,boundary_type,dx,dx_u,[xminmax' yminmax'])
+        c,c_phys,rho,sigma0,fmax,boundary_type,dx,dx_u,dx_src,[xminmax' yminmax'])
 end
 
 
 %% RUN SIMULATION
 tic
-%parfor i=1:size(p_ics,1)
-for i=1:size(p_ics,1)
+parfor i=1:size(p_ics,1)
+%for i=1:size(p_ics,1)
     fprintf('Calculating solution %i/%i\n', i, size(p_ics,1))    
     z0 = zeros(3*N,1);
     
@@ -292,6 +349,7 @@ function srcs = generateGaussianICs2D(x2d,y2d,xy0_srcs,sigma0)
 end
 
 function plotICs2D(X2D,Y2D,p0_ics,conn)
+    figure('Position', [0 500 1500 300])
     N = size(p0_ics,1);    
     for i = 1:N
         subplot(1,N,i)
@@ -299,9 +357,9 @@ function plotICs2D(X2D,Y2D,p0_ics,conn)
             conn = delaunay(X2D(:),Y2D(:));
         end
         trisurf(conn, X2D(:), Y2D(:), p0_ics(i,:));
-        hold on
+%         hold on
     end
-    hold off
+%     hold off
 
     title('Pressure initial condition')
     xlabel('x')

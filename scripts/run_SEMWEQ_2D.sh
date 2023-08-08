@@ -3,7 +3,7 @@
 #BSUB -W 72:00
 #BSUB -q hpc
 # -- Number of cores requested -- 
-#BSUB -n 1
+#BSUB -n 8
 #BSUB -R "span[hosts=1]"
 #BSUB -R "rusage[mem=64GB]"
 #BSUB -J matlab2D

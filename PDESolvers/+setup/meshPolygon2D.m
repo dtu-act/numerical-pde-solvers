@@ -31,7 +31,6 @@ function [VX, VY, EToV, dx] = meshPolygon2D(c,fmax,P,ppw,pv,do_plot)
     % Call distmesh
     [Vert,EToV] = distmesh( fd, fh, h0, bbox, pv );
     VX = Vert(:,1)'; VY = Vert(:,2)';
-    Nv = length(VX); K = size(EToV,1);
     if do_plot
         patch( 'vertices', Vert, 'faces', EToV, 'facecolor', [.9, .9, .9] )
     end

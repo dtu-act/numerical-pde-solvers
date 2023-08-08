@@ -1,5 +1,5 @@
 function writeHeaderHDF5(filename,mesh,umesh,umesh_shape,tvec,conn,...
-    c,c_phys,rho,sigma,fmax,boundary_type,dx,dx_u,domain_minmax)
+    c,c_phys,rho,sigma,fmax,boundary_type,dx,dx_u,dx_src,domain_minmax)
 
     if isfile(filename)
         delete(filename)
@@ -25,7 +25,8 @@ function writeHeaderHDF5(filename,mesh,umesh,umesh_shape,tvec,conn,...
     
     h5writeatt(filename,'/umesh/','dx',dx_u)
     h5writeatt(filename,'/mesh/','dt',dt)
-    h5writeatt(filename,'/mesh/','dx',dx)    
+    h5writeatt(filename,'/mesh/','dx',dx)
+    h5writeatt(filename,'/mesh/','dx_src',dx_src)    
     h5writeatt(filename,'/mesh/','c',c)
     h5writeatt(filename,'/mesh/','c_phys',c_phys)
     h5writeatt(filename,'/mesh/','rho',rho)

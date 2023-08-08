@@ -1,5 +1,5 @@
 function initHDF5(filename,mesh,umesh,umesh_shape,p,up,tvec,conn,x0_srcs,...
-    c,c_phys,rho,sigma,fmax,boundary_type,dx,dx_u,domain_minmax)
+    c,c_phys,rho,sigma,fmax,boundary_type,dx,dx_u,dx_src,domain_minmax)
 
     if isfile(filename)
         delete(filename)
@@ -43,6 +43,7 @@ function initHDF5(filename,mesh,umesh,umesh_shape,p,up,tvec,conn,x0_srcs,...
     h5writeatt(filename,'/upressures/','dx',dx_u)
     h5writeatt(filename,'/pressures/','dt',dt)
     h5writeatt(filename,'/pressures/','dx',dx)
+    h5writeatt(filename,'/pressures/','dx_src',dx_src)
     h5writeatt(filename,'/pressures/','c',c)
     h5writeatt(filename,'/pressures/','c_phys',c_phys)
     h5writeatt(filename,'/pressures/','rho',rho)
