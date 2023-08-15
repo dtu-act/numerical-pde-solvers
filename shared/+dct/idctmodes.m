@@ -1,4 +1,6 @@
 function x = idctmodes(X, boundary_type)
+    import models.types.*
+    
     switch boundary_type
         case BoundaryType.Neumann
             x = idctmodes_neumann(X);

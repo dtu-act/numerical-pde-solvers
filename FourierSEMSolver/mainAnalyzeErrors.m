@@ -1,7 +1,14 @@
 clear all
 close all
 
+import utilsDD.*
+import plotting.*
+
 base_path = '~/data/fm-sem/';
+plots_path = sprintf('%s/%s', base_path, 'plots');
+mkdir(base_path)
+mkdir(plots_path)
+
 write_gif = false;
 write_plot = true && ~write_gif;
 if write_gif
@@ -10,7 +17,8 @@ else
     overwrite_time_at = 0.19;
 end
 
-data = load(sprintf('%s/FOURIER_SEM_ppw4_8_src_LEFT_fmax_1000.mat', base_path));
+%data = load(sprintf('%s/FOURIER_SEM_ppw4_8_src_LEFT_fmax_1000.mat', base_path));
+data = load(sprintf('%s/FOURIER_SEM_ppw4_4_src_LEFT_fmax_1000.mat', base_path));
 
 iter = data.iter;
 fmax = data.fmax;
@@ -195,7 +203,7 @@ if ~write_gif
     ylim(ax4,[-90 -40])
     legend(ax4,'FM-SEM', 'reference', 'location', 'southwest')
 
-    saveas(h,sprintf('%s/plots/FOURIER_SEM_ppw%i_%i_fmax_%i',base_path,data.ppw1,data.ppw2,fmax),'epsc')
+    saveas(h,sprintf('%s/FOURIER_SEM_ppw%i_%i_fmax_%i',plots_path,data.ppw1,data.ppw2,fmax),'epsc')
 end
 
 %% calculate pulse width

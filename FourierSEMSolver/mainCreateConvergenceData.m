@@ -1,10 +1,18 @@
 clear all
 close all
 
+import utilsDD.*
+import models.types.*
+import models.*
+import setup.*
+import plotting.*
+
+
 write_data = false;
 write_gif = true;
 do_plot = true;
 base_path = '~/data/fm-sem/dxFourier_x2_dxInterface_x1';
+mkdir(base_path);
 
 %% SETUP SIMULATION PARAMETERS
 
@@ -47,7 +55,7 @@ if conv_test == "fourier"
     if rem(iter,1) ~=0
         iter = ceil(iter);
         dt_adjust = tmax/iter;
-        fprintf('WARNING: dt1 adjusted from %e to %e to match tmax', dt, dt_adjust)
+        fprintf('WARNING: dt1 adjusted from %e to %e to match tmax\n', dt, dt_adjust)
         dt = dt_adjust;
     end
     
@@ -63,9 +71,9 @@ if conv_test == "fourier"
     
     domain1 = Domain1D(x1d, dx1, dt, c, rho, xminmax, BoundaryType.Neumann);
     src1 = defaultSource(fmax,sourceFactor,domain1,x0_pos);
-    s1 = Simulation1D(SolverType.FOURIER, domain1, src1, CustomFourier(nmodes));
+    s1 = Simulation1D(SolverType.FOURIER, domain1, src1, solvers.CustomFourier(nmodes));
     
-    p = runSingleDomainSolver(iter, s1);
+    p = solvers.runSingleDomainSolver(iter, s1);
     p = p*2;
     
     dx=dx1;
@@ -158,7 +166,8 @@ for n=1:iter
         if conv_test == "fourier_sem"
             title_str = sprintf('%s | %s \n ppw ratio %i : %i          dt ratio 1 : %i \n t=%f', .../
                 s1.solver_type, s2.solver_type, ppw_fourier, ppw_sem, s1.domain.dt/s2.domain.dt, t);
-            plotSemiLogCoupled(x1d_1, l_d1+x1d_2, x1d_ref, p1(n,:), p2(n,:), p_ref(n,:), title_str, ax1, ax2)
+            plotSemiLogCoupled(x1d_1, l_d1+x1d_2, x1d_ref, p1(n,:), p2(n,:), p_ref(n,:), title_str, ...
+                "Fourier", "SEM", ax1, ax2)
             drawnow
         else
             title_str = sprintf('t = %0.4f, n = %i', t, n);
@@ -179,13 +188,18 @@ for n=1:iter
 
         if write_gif
             filename = sprintf('%s_L%0.2f_dx%0.3f_dt%0.6f.gif', conv_test, L, dx1, dt);
-            writeGif(h, sprintf('%s/%s',base_path, filename), n==1);
+            plotting.writeGif(h, sprintf('%s/%s',base_path, filename), n==1);
         end
     end
 end
 
 
 function [p, x1d] = calcAnalytical(xminmax, dt, dx1, fmax, x0_pos, L, c, rho, tmax)
+    import utilsDD.*
+    import models.types.*
+    import models.*
+    import solvers.*
+    
     iter = tmax/dt;
     if rem(iter,1) ~=0
         error('ERROR: tmax not a multiple of dt')

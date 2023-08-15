@@ -1,6 +1,10 @@
 clear all
 close all
 
+import setup.*
+import models.*
+import models.types.*
+
 do_animation = false;
 write_gif = do_animation && false;
 
@@ -14,7 +18,7 @@ base_path = '~/data/fm-sem/';
 %tmax = 0.0135;
 tmax = 0.2;
 
-% .FDTD_FDTD | .FOURIER_FOURIER | .FOURIER_FDTD | .SEM_SEM | .FOURIER_SEM | .SEM
+% .FDTD_FDTD | .FOURIER_FOURIER | .FOURIER_FDTD | .SEM_SEM | .FOURIER_SEM
 coupling_methods = "FOURIER_SEM"; 
 source_partition = "LEFT";
 x0_pos = 2.5;
@@ -30,46 +34,50 @@ xminmax = [0,10]; % domain length
 fmax = 1000;      % [Hz]
 c = 343;          % m/sec speed
 rho = 1.2;
-    
+
+interface_order = scheme_order;
+
 %% SETUP and SOLVE
 switch coupling_methods
     case "FDTD_FDTD"
         ppw1 = 4;
         ppw2 = 4;
+
+        [dx1] = utilsDD.calcSpatial(xminmax(2),fmax,ppw1,c);
+        [dx2] = utilsDD.calcSpatial(xminmax(2),fmax,ppw2,c);
         
-        [dx1] = calcSpatial(xminmax(2),fmax,ppw1,c);
-        [dx2] = calcSpatial(xminmax(2),fmax,ppw2,c);
-        
-        [p1,p2,s1,s2,iter] = run_FDTD_FDTD(tmax, xminmax, dx1, dx2, fmax, c, rho, scheme_order);
+        [p1,p2,s1,s2,iter] = run_FDTD_FDTD(tmax, xminmax, x0_pos, dx1, dx2, fmax, c, rho, scheme_order);
     case "FOURIER_FOURIER"
         % ppw are restricted by the interface scheme
         ppw1 = 4;
         ppw2 = 12;
         
-        [dx1] = calcSpatial(xminmax(2),fmax,ppw1,c);
-        [dx2] = calcSpatial(xminmax(2),fmax,ppw2,c);
+        [dx1] = utilsDD.calcSpatial(xminmax(2),fmax,ppw1,c);
+        [dx2] = utilsDD.calcSpatial(xminmax(2),fmax,ppw2,c);
         
-        [p1,p2,s1,s2,iter] = run_FOURIER_FOURIER(tmax, xminmax, dx1, dx2, fmax, source_partition, x0_pos, c, rho, scheme_order);
+        [p1,p2,s1,s2,iter] = run_FOURIER_FOURIER(tmax, xminmax, x0_pos, dx1, dx2, fmax, ...
+            source_partition, c, rho, scheme_order);
     case "FOURIER_FDTD"
         ppw1 = 4;
         ppw2 = 8;
         
-        [dx1] = calcSpatial(xminmax(2),fmax,ppw1,c);
-        [dx2] = calcSpatial(xminmax(2),fmax,ppw2,c);
+        [dx1] = utilsDD.calcSpatial(xminmax(2),fmax,ppw1,c);
+        [dx2] = utilsDD.calcSpatial(xminmax(2),fmax,ppw2,c);
         
-        [p1,p2,s1,s2,iter] = run_FOURIER_FDTD(tmax, xminmax, dx1, dx2, fmax, c, rho, scheme_order);
+        [p1,p2,s1,s2,iter] = run_FOURIER_FDTD(tmax, xminmax, x0_pos, dx1, dx2, fmax, c, rho, scheme_order);
     case "SEM_SEM"
+        % TODO: assert failing: equal number of elements required
+
         ppw1 = 2;
-        ppw2 = 4;        
+        ppw2 = 4;
         
-        interface_order = scheme_order;
-        
-        [dx1] = calcSpatial(xminmax(2),fmax,ppw1,c);
-        [dx2] = calcSpatial(xminmax(2),fmax,ppw2,c);
+        [dx1] = utilsDD.calcSpatial(xminmax(2),fmax,ppw1,c);
+        [dx2] = utilsDD.calcSpatial(xminmax(2),fmax,ppw2,c);
         dx_i = dx2;
         iface = SEMUniformInterface(dx_i, 3, 1, false, InterfaceLocation1D.LEFT);
         
-        [p1,p2,s1,s2,iter] = run_SEM_SEM(tmax, xminmax_1, xminmax_2, dx1, dx2, fmax, c, rho, P_order, interface_order, iface);    
+        [p1,p2,s1,s2,iter] = run_SEM_SEM(tmax, xminmax, x0_pos, dx1, dx2, ...
+            fmax, c, rho, P_order, interface_order, iface);    
     case "FOURIER_SEM"                
         ppw1 = 4;
         ppw2 = 4;
@@ -80,9 +88,9 @@ switch coupling_methods
         xminmax_1(2) = round(xminmax(2)*frac_partition1);
         xminmax_2(2) = xminmax(2) - xminmax_1(2);
         
-        [dx1] = calcSpatial(xminmax_1(2),fmax,ppw1,c);
+        [dx1] = utilsDD.calcSpatial(xminmax_1(2),fmax,ppw1,c);
         dx2 = dx1*ppw1/ppw2;
-        %[dx2] = calcSpatial(xminmax_2(2),fmax,ppw2,c);
+        %[dx2] = utilsDD.calcSpatial(xminmax_2(2),fmax,ppw2,c);
         dx_i = dx2/2;
         iface = SEMUniformInterface(dx_i, 3, 1, false, InterfaceLocation1D.LEFT);
         
@@ -98,7 +106,6 @@ switch coupling_methods
             end
         end
         
-        interface_order = scheme_order;
         [p1,p2,s1,s2,iter] = run_FOURIER_SEM(tmax, xminmax_1, xminmax_2, ...\
             dx1, dx2, fmax, source_partition, x0_pos, c, rho, P_order, interface_order, iface);
     otherwise
@@ -159,15 +166,15 @@ if write_fig
     ax1 = nexttile;
     ax2 = nexttile;
     
-    i1 = getClosestIndex(x1d_1, 2.5);
-    i2 = getClosestIndex(x1d_1, 5.0);
+    i1 = utilsDD.getClosestIndex(x1d_1, 2.5);
+    i2 = utilsDD.getClosestIndex(x1d_1, 5.0);
 
     err_dB_iface = max(20*log10(abs(p1(iter,i1:i2))));
 
     fprintf('%s_ppw%i_%i_fmax_%i\n',coupling_methods,ppw1,ppw2,fmax);
     fprintf('Err interface: %i dB\n', round(err_dB_iface))
 
-    plotSemiLogCoupled(x1d_1, x1d_2, s_ref.domain.x1d, p1(iter,:), p2(iter,:), p_ref(iter,:), title_str, legend1, legend2, ax1, ax2)
+    plotting.plotSemiLogCoupled(x1d_1, x1d_2, s_ref.domain.x1d, p1(iter,:), p2(iter,:), p_ref(iter,:), title_str, legend1, legend2, ax1, ax2)
 
     figure(3); 
     plot(x1d_1(i1:i2), 20*log10(abs(p1(iter,i1:i2))))
@@ -184,20 +191,22 @@ if do_animation
         if mod(n-1,5) == 0
             t = n*s1.domain.dt;
             fprintf('n=%i, t=%0.4f\n',n,t)
-            plotSemiLogCoupled(x1d_1, x1d_2, s_ref.domain.x1d, p1(n,:), p2(n,:), p_ref(n,:), ...\
+            plotting.plotSemiLogCoupled(x1d_1, x1d_2, s_ref.domain.x1d, p1(n,:), p2(n,:), p_ref(n,:), ...\
                 title_str, legend1, legend2, ax1, ax2)
             drawnow
 
             if write_gif
                 path = sprintf('%s/%s_ppw%i_%i_fmax_%i',base_path,coupling_methods,ppw1,ppw2,fmax);
-                writeGif(h, path, n==1);
+                plotting.writeGif(h, path, n==1);
             end
         end
     end    
 end
 
-function [p, s1] = calcReference(xminmax, ppw, dt, fmax, x0_pos, c, rho, iter, tnorm)    
-    [dx,nmodes] = calcSpatial(xminmax(2),fmax,ppw,c);
+function [p, s1] = calcReference(xminmax, ppw, dt, fmax, x0_pos, c, rho, iter, tnorm)
+    import models.types.*
+
+    [dx,nmodes] = utilsDD.calcSpatial(xminmax(2),fmax,ppw,c);
     if dt > dx/c
         error('dt not satisfying CFL!')
     end
@@ -205,15 +214,15 @@ function [p, s1] = calcReference(xminmax, ppw, dt, fmax, x0_pos, c, rho, iter, t
     x1d = xminmax(1):dx:xminmax(end);
     assert(abs(x1d(end) - xminmax(end)) < eps('double'))
     
-    sourceFactor = sourceScalingFourier()*2;
+    sourceFactor = utilsDD.sourceScalingFourier()*2;
     
-    domain1 = Domain1D(x1d, dx, dt, c, rho, xminmax, BoundaryType.Neumann);
-    src1 = defaultSource(fmax,sourceFactor,domain1,x0_pos);
+    domain1 = models.Domain1D(x1d, dx, dt, c, rho, xminmax, BoundaryType.Neumann);
+    src1 = utilsDD.defaultSource(fmax,sourceFactor,domain1,x0_pos);
     assert(abs(src1.x0 - x0_pos) < eps('single'))
     
-    s1 = Simulation1D(SolverType.FOURIER, domain1, src1, CustomFourier(nmodes));
+    s1 = models.Simulation1D(SolverType.FOURIER, domain1, src1, solvers.CustomFourier(nmodes));
     
-    p = runSingleDomainSolver(iter, s1);
+    p = solvers.runSingleDomainSolver(iter, s1);
     
     n_norm = round(tnorm/dt);
     norm_factor = max(p(n_norm,:));

@@ -1,8 +1,14 @@
 clear all
 close all
 
-do_animation = true;
-write_gif = do_animation && false;
+import utilsDD.*
+import setup.*
+import models.types.*
+import models.*
+import plotting.*
+
+do_animation = false;
+write_gif = do_animation && true;
 
 write_data = false;
 write_fig = false;
@@ -14,7 +20,7 @@ base_path = '~/data/fm-sem';
 %tmax = 0.0135;
 tmax = 0.2;
 
-coupling_methods = "SEM"; % SEM | FOURIER
+coupling_methods = "FOURIER"; % SEM | FOURIER
 x0_pos = 2.5;
 
 % SEM SETUP
@@ -53,18 +59,18 @@ switch coupling_methods
         solver_type = SolverType.FOURIER;
         ppw = 4;  
         [dx,nmodes] = calcSpatial(xminmax(2),fmax,ppw,c);
-        custom = CustomFourier(nmodes);
+        custom = solvers.CustomFourier(nmodes);
         
-        x1d_1 = xminmax_1(1):dx:xminmax_1(2);
+        x1d_1 = xminmax(1):dx:xminmax(2);
         
         dt = dx/(c*cfl);
         iter = round(tmax/dt);
         
-        sourceFactor = sourceScalingFourier(P_order);
+        sourceFactor = sourceScalingFourier();
         
         bound_type = BoundaryType.Neumann;
         domain = Domain1D(x1d_1, dx, dt, c, rho, xminmax, bound_type);
-        src = defaultSource(fmax,sourceFactor,domain);
+        src = defaultSource(fmax,sourceFactor,domain, x0_pos);
         s1 = Simulation1D(SolverType.FOURIER, domain, src, custom);
     otherwise
         error('method not supported');
@@ -76,7 +82,7 @@ p_all = zeros(iter,length(s1.p_current));
 
 tstart_sim_tot = tic;
 for n=1:iter
-    [p,~] = solverWE1D_o(n,solver_type,p,xminmax,c,dt,custom,F,bound_type);            
+    [p,~] = solvers.solverWE1D_o(n,solver_type,p,xminmax,c,dt,custom,F,bound_type);            
     p_all(n+1,:) = p(:,1);
     
 %     if mod(n-1,100) == 0
@@ -102,9 +108,10 @@ x1d_ref = s_ref.domain.x1d;
 
 if write_data
     L = x1d(2) - x1d(1);
-    save(sprintf('%s/%s_ppw%i_%i_src_%s_fmax_%i.mat', ...\
-        base_path, coupling_methods, ppw, ppw2, source_partition, fmax), ...\
-        'p1', 'p2', 'p_ref', 's1', 's2', 's_ref', 'ppw1', 'ppw2', 'tmax', 'L', 'interface_order', 'fmax');
+    p_sim = p_all;
+    save(sprintf('%s/%s_ppw%i_fmax_%i.mat', ...\
+        base_path, coupling_methods, ppw, fmax), ...\
+        'p_sim', 'p_ref', 's1', 's_ref', 'ppw', 'tmax', 'L', 'fmax');
 end
 
 fprintf('SIM TOTAL: %0.3f \n', sim_tot)
@@ -141,7 +148,7 @@ if do_animation
             drawnow
 
             if write_gif
-                path = sprintf('%s/%s_ppw%i_%i_fmax_%i',base_path,coupling_methods,ppw,ppw2,fmax);
+                path = sprintf('%s/%s_ppw%i_fmax_%i',base_path,coupling_methods,ppw,fmax);
                 writeGif(h, path, n==1);
             end
         end
