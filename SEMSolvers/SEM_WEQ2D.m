@@ -2,7 +2,7 @@ clear all
 close all
 
 hpc_env = false;        % run locally or on HPC system (DTU)
-run_parallel = true;    % run in parallel
+run_parallel = false;    % run in parallel
 
 plot_impedance_fitting = false; % plot impedance fittings
 do_plot = true & ~hpc_env;      % plot mesh, initial conditions and more
@@ -313,8 +313,8 @@ end
 %%% RUN SIMULATION %%%
 %%%%%%%%%%%%%%%%%%%%%%
 tic
-parfor i=1:size(p_ics,1)
-%for i=1:size(p_ics,1) % use this for non-parallel execution
+%parfor i=1:size(p_ics,1)
+for i=1:size(p_ics,1) % use this for non-parallel execution
     fprintf('Calculating solution %i/%i\n', i, size(p_ics,1))    
     z0 = zeros(3*N,1);
     
@@ -358,16 +358,17 @@ if do_plot & ~run_parallel
         % only works if not pruned in spatial dimension
         tri = conn(:,1:3);
     end
-    for i = 1:size(p_i,2)
+    for i = 1:80 %1:size(p_i,2)
         trisurf(tri, mesh(:,1), mesh(:,2), p_i(:,i));
+        fontsize(16,"points")
         %shading flat
         %axis equal
-        xlabel('x')
-        ylabel('y')
-        zlabel('p')
-        title(sprintf('Simulated, t = %1.5f s',dt*(i-1)))
-        zlim([-1.0 1.0])
-        colorbar()
+        xlabel('x [m]')
+        ylabel('y [m]')
+        zlabel('Pressure [Pa]')
+        %title(sprintf('Simulated, t = %1.5f s',dt*(i-1)))
+        zlim([-0.4 0.4])
+        %colorbar()
         caxis([-0.3 0.3])    
         %view([180 0])
         drawnow
@@ -385,21 +386,20 @@ end
 
 function plotICs2D(X2D,Y2D,p0_ics,conn)
     figure('Position', [0 500 1500 300])
-    N = size(p0_ics,1);    
+    %title('Pressure initial condition')
+    N = size(p0_ics,1);
     for i = 1:N
         subplot(1,N,i)
         if nargin == 3
             conn = delaunay(X2D(:),Y2D(:));
         end
         trisurf(conn, X2D(:), Y2D(:), p0_ics(i,:));
-        %hold on
+        xlabel('x')
+        ylabel('y')
+        zlabel('Pressure [Pa]')
     end
-    %hold off
-
-    title('Pressure initial condition')
-    xlabel('x')
-    ylabel('y')
-    zlabel('Pressure [Pa]')
+    fontsize(16,"points")
+    
 end
 
 function [rhs_fn] = setupFrequencyIndependentBCs(rho,c,bcmap,hsurf,N,P,Sx,Sy,M1D,Z)
